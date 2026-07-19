@@ -14,14 +14,22 @@ def safe_rerun():
         st.stop()
 
 # --- CONFIGURATION ---
-# Replace this with the path to your images folder (e.g., "2011" or "photos")
-IMAGE_DIR = r"\gtp\2011\" 
+# Path to your images folder. If a relative name like "2011" is used,
+# it will be resolved relative to this script's directory so Streamlit can find it.
+DEFAULT_RELATIVE_DIR = "2011"
+IMAGE_DIR = os.environ.get("GTPE_IMAGE_DIR", DEFAULT_RELATIVE_DIR)
 
 # --- HELPER FUNCTIONS ---
 @st.cache_data
 def load_game_data(directory):
     """Reads the directory and creates a list of dicts mapping paths to cleaned names."""
     game_data = []
+    # Resolve relative paths to the directory containing this script
+    if not os.path.isabs(directory):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        directory = os.path.join(base_dir, directory)
+
+    directory = os.path.abspath(directory)
     if not os.path.exists(directory):
         return game_data
         
@@ -189,4 +197,10 @@ else:
         st.session_state.score = 0
         st.session_state.game_over = False
         st.session_state.feedback = None
-        st.rerun()
+        # Use safe_rerun to handle Streamlit versions
+        try:
+            safe_rerun()
+        except Exception:
+            # As a final fallback, stop so the UI refreshes on next interaction
+            st.session_state["_needs_rerun"] = True
+            st.stop()
