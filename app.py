@@ -15,7 +15,7 @@ def safe_rerun():
 
 # --- CONFIGURATION ---
 # Replace this with the path to your images folder (e.g., "2011" or "photos")
-IMAGE_DIR = r"\2011" 
+IMAGE_DIR = r"gtp\2011\" 
 
 # --- HELPER FUNCTIONS ---
 @st.cache_data
