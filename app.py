@@ -214,7 +214,7 @@ if page == "Guess That Pittsvillian":
         """
         components.html(timer_html, height=0)
 
-        st.title("👥 Guess the Pittsvillian")
+        st.title("👥 Guess That Pittsvillian")
 
         current_idx = st.session_state.current_index
         total_images = len(st.session_state.all_items)
