@@ -10,8 +10,7 @@ from PIL import Image, ImageOps
 st.set_page_config(
     page_title="Guess that Pittsvillian", 
     page_icon="👥", 
-    layout="centered",
-    initial_sidebar_state="expanded" # Forces the sidebar to be open and visible
+    layout="centered"
 )
 
 # --- RESPONSIVE MOBILE CSS ---
@@ -35,9 +34,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR NAVIGATION ---
-st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["Guess That Pittsvillian", "Browse Pittsvillians"])
 
 # --- HELPER FUNCTIONS ---
 def format_name_blanks(name, mode):
@@ -179,19 +175,24 @@ def show_incorrect_dialog(last_guess, correct_name, correct_year, image_path):
                 st.session_state.no_idea = False
                 st.rerun()
 
+# --- MAIN TABS NAVIGATION ---
+tab_play, tab_browse = st.tabs(["🎮 Guess That Pittsvillian", "📚 Browse Pittsvillians"])
 
 # ==========================================
-# PAGE 1: MAIN GAME (GUESS THAT PITTSVILLIAN)
+# TAB 1: MAIN GAME (GUESS THAT PITTSVILLIAN)
 # ==========================================
-if page == "Guess That Pittsvillian":
+with tab_play:
     # --- SETTINGS SCREEN ---
     if "game_active" not in st.session_state or not st.session_state.game_active:
+        # Clear the JS timer if they are on the setup screen
+        components.html("""<script>sessionStorage.removeItem("pittsvillian_startTime");</script>""", height=0)
+        
         st.title("🎓 Guess that Pittsvillian - Setup")
         
         st.subheader("1. Select Years to Play")
         col1, col2, col3, col4 = st.columns(4)
         with col1: year_2011 = st.checkbox("Class of 2011", value=True)
-        with col2: year_2012 = st.checkbox("Class of 2012", value=True)
+        with col2: year_2012 = st.checkbox("Class of 2012")
         with col3: year_2013 = st.checkbox("Class of 2013")
         with col4: year_2014 = st.checkbox("Class of 2014")
         
@@ -331,6 +332,16 @@ if page == "Guess That Pittsvillian":
                         st.markdown(f"<span style='color:red'>✗ {name}</span>", unsafe_allow_html=True)
             else:
                 st.write("(No names seen yet)")
+                
+            # Restart game button inside active game
+            st.markdown("---")
+            if st.button("🔄 Restart Game (Change Settings)", use_container_width=True):
+                st.session_state.game_active = False
+                # Clear cache so we can return cleanly to setup menu
+                for key in list(st.session_state.keys()):
+                    if key != "game_active":
+                        del st.session_state[key]
+                st.rerun()
 
         else:
             # --- GAME OVER SCREEN ---
@@ -425,6 +436,8 @@ if page == "Guess That Pittsvillian":
                     st.session_state.no_idea = False
                     st.session_state.last_guess = ""
                     st.session_state.start_time = time.time()
+                    # Also need to reset JS timer for retry
+                    components.html("""<script>sessionStorage.removeItem("pittsvillian_startTime");</script>""", height=0)
                     st.rerun()
                     
             with btn_col2:
@@ -436,11 +449,10 @@ if page == "Guess That Pittsvillian":
                             del st.session_state[key]
                     st.rerun()
 
-
 # ==========================================
-# PAGE 2: BROWSE PITTSVILLIANS
+# TAB 2: BROWSE PITTSVILLIANS
 # ==========================================
-elif page == "Browse Pittsvillians":
+with tab_browse:
     st.title("📚 Browse Pittsvillians")
     st.write("View the student directories below.")
     
