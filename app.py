@@ -14,6 +14,24 @@ st.set_page_config(
     initial_sidebar_state="expanded" # Forces the sidebar to be open and visible
 )
 
+# --- RESPONSIVE MOBILE CSS ---
+# Forces Streamlit columns to remain as a 2-column grid on mobile instead of stacking to 1 column
+st.markdown("""
+    <style>
+    @media (max-width: 600px) {
+        [data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap !important;
+        }
+        [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+            width: calc(50% - 1rem) !important;
+            flex: 1 1 calc(50% - 1rem) !important;
+            min-width: calc(50% - 1rem) !important;
+            margin-bottom: 1rem;
+        }
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- SIDEBAR NAVIGATION ---
 st.sidebar.title("Navigation")
 page = st.sidebar.radio("Go to", ["Guess That Pittsvillian", "Browse Pittsvillians"])
