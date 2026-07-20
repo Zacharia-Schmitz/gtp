@@ -3,6 +3,7 @@ import streamlit.components.v1 as components
 import os
 import random
 import time
+from PIL import Image, ImageOps
 
 # --- APP INITIALIZATION ---
 # Must be the first Streamlit command
@@ -15,7 +16,7 @@ st.set_page_config(
 
 # --- SIDEBAR NAVIGATION ---
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["Guess That Pittsvillian", "Browse Classes"])
+page = st.sidebar.radio("Go to", ["Guess That Pittsvillian", "Browse Pittsvillians"])
 
 # --- HELPER FUNCTIONS ---
 def format_name_blanks(name, mode):
@@ -26,6 +27,21 @@ def format_name_blanks(name, mode):
     words = name.split()
     blank_words = [" ".join(["_"] * len(w)) for w in words]
     return " &nbsp; &nbsp; &nbsp; ".join(blank_words)
+
+def get_standardized_image(image_path):
+    """Opens an image and crops/resizes it to a uniform 3:4 portrait aspect ratio."""
+    target_size = (300, 400)  # Standard portrait size
+    try:
+        img = Image.open(image_path)
+        # Handle images with transparency to prevent black backgrounds on resize
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        # ImageOps.fit crops and centers the image perfectly to the target size
+        resampling_method = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+        return ImageOps.fit(img, target_size, method=resampling_method)
+    except Exception as e:
+        # Fallback to the original path if processing fails
+        return image_path
 
 @st.cache_data
 def load_game_data(selected_years):
@@ -226,7 +242,7 @@ if page == "Guess That Pittsvillian":
                 
             st.markdown("---")
             
-            # Display Friend's Image
+            # Display Friend's Image - we keep original aspect ratio here for detail
             st.image(image_path, use_container_width=True)
             
             # Display the formatted blanks
@@ -344,7 +360,9 @@ if page == "Guess That Pittsvillian":
                 cols = st.columns(4) # Adjust number of columns based on preference
                 for idx, item in enumerate(incorrect_items):
                     with cols[idx % 4]:
-                        st.image(item["image_path"], caption=item["name"], use_container_width=True)
+                        # Pass through our standardization function so they line up cleanly
+                        std_img = get_standardized_image(item["image_path"])
+                        st.image(std_img, caption=item["name"], use_container_width=True)
 
             st.markdown("---")
             
@@ -376,10 +394,10 @@ if page == "Guess That Pittsvillian":
 
 
 # ==========================================
-# PAGE 2: BROWSE CLASSES
+# PAGE 2: BROWSE PITTSVILLIANS
 # ==========================================
-elif page == "Browse Classes":
-    st.title("📚 Browse Classes")
+elif page == "Browse Pittsvillians":
+    st.title("📚 Browse Pittsvillians")
     st.write("View the student directories below.")
     
     all_possible_years = ["2011", "2012", "2013", "2014"]
@@ -405,7 +423,10 @@ elif page == "Browse Classes":
         cols = st.columns(4)
         for idx, item in enumerate(browse_data):
             with cols[idx % 4]:
-                st.image(item["image_path"], use_container_width=True)
+                # Standardize the image to a 3:4 aspect ratio to fix grid alignment
+                standard_img = get_standardized_image(item["image_path"])
+                
+                st.image(standard_img, use_container_width=True)
                 
                 # HTML markdown to display name and class beautifully centered underneath
                 st.markdown(
