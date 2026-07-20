@@ -1,0 +1,7 @@
+Planned changes:
+- Replace immediate advance after submission with modal-based flow.
+- Initialize modal-related session_state keys.
+- Show Correct modal with OK/Next; Next advances and reruns.
+- Show Incorrect modal with Try Again/Give Up; Give Up reveals name and awaits Next.
+
+If st.modal is not available, UI may error; consider fallback to inline buttons if needed.

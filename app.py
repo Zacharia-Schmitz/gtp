@@ -24,14 +24,37 @@ IMAGE_DIR = os.environ.get("GTPE_IMAGE_DIR", DEFAULT_RELATIVE_DIR)
 def load_game_data(directory):
     """Reads the directory and creates a list of dicts mapping paths to cleaned names."""
     game_data = []
-    # Resolve relative paths to the directory containing this script
-    if not os.path.isabs(directory):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        directory = os.path.join(base_dir, directory)
 
-    directory = os.path.abspath(directory)
-    if not os.path.exists(directory):
+    # Build a list of candidate directories to try so deploys find the images
+    tried_paths = []
+    candidates = []
+    if os.path.isabs(directory):
+        candidates.append(directory)
+    else:
+        # relative to this script
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        candidates.append(os.path.join(base_dir, directory))
+        # relative to current working directory
+        candidates.append(os.path.join(os.getcwd(), directory))
+        # common static subfolder
+        candidates.append(os.path.join(base_dir, 'static', directory))
+        candidates.append(os.path.join(os.getcwd(), 'static', directory))
+
+    # Normalize and find the first existing directory
+    directory_found = None
+    for cand in candidates:
+        cand_abs = os.path.abspath(cand)
+        tried_paths.append(cand_abs)
+        if os.path.exists(cand_abs) and os.path.isdir(cand_abs):
+            directory_found = cand_abs
+            break
+
+    if directory_found is None:
+        # attach tried paths for helpful debugging
+        load_game_data._last_tried = tried_paths
         return game_data
+
+    directory = directory_found
         
     valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
     for filename in os.listdir(directory):
@@ -71,10 +94,26 @@ if "seen_list" not in st.session_state:
 if "awaiting_next" not in st.session_state:
     # When True, user has skipped and must click Next to continue
     st.session_state.awaiting_next = False
+if "show_correct_modal" not in st.session_state:
+    st.session_state.show_correct_modal = False
+if "show_wrong_modal" not in st.session_state:
+    st.session_state.show_wrong_modal = False
+if "last_guess" not in st.session_state:
+    st.session_state.last_guess = ""
+if "awaiting_next" not in st.session_state:
+    # When True, user has skipped and must click Next to continue
+    st.session_state.awaiting_next = False
 
 # Safety check if directory is empty or wrong
 if not st.session_state.all_items:
-    st.error(f"No images found in the directory: `{IMAGE_DIR}`. Please verify your path configuration.")
+    # If load_game_data saved tried paths, show them to help debugging in deploys
+    tried = getattr(load_game_data, '_last_tried', None)
+    if tried:
+        st.error(f"No images found for configured directory: `{IMAGE_DIR}`. Tried these locations:")
+        for p in tried:
+            st.write(p)
+    else:
+        st.error(f"No images found in the directory: `{IMAGE_DIR}`. Please verify your path configuration.")
     st.stop()
 
 # --- GAME LOGIC CODE ---
@@ -119,21 +158,16 @@ if not st.session_state.game_over:
             if user_guess:
                 # Case-insensitive comparison
                 if user_guess.lower() == correct_answer.lower():
+                    # Record correct answer but do NOT advance yet; show modal
                     st.session_state.score += 1
-                    st.session_state.feedback = ("success", f"🎉 Correct! That is **{correct_answer}**.")
-                    # Record correct name in seen list
                     st.session_state.seen_list.append({"name": correct_answer, "status": "correct"})
+                    st.session_state.show_correct_modal = True
+                    st.session_state.feedback = None
                 else:
-                    st.session_state.feedback = ("error", f"❌ Close, but that is **{correct_answer}**. You guessed '{user_guess}'.")
-
-                # Advance game index or trigger Game Over
-                if current_idx + 1 < total_images:
-                    st.session_state.current_index += 1
-                    # Rerun so the next picture is shown immediately
-                    safe_rerun()
-                else:
-                    st.session_state.game_over = True
-                    safe_rerun()
+                    # Wrong answer: save guess and show wrong modal
+                    st.session_state.last_guess = user_guess
+                    st.session_state.show_wrong_modal = True
+                    st.session_state.feedback = None
             else:
                 st.warning("Please type a name before submitting!")
     else:
@@ -149,6 +183,63 @@ if not st.session_state.game_over:
                 st.session_state.awaiting_next = False
             else:
                 st.session_state.game_over = True
+
+    # --- Modals for correct / wrong answers ---
+    if st.session_state.show_correct_modal:
+        try:
+            with st.modal("Correct!", clear_on_close=True):
+                st.success(f"🎉 Correct! That is **{correct_answer}**.")
+                col_ok, col_next = st.columns([1,1])
+                if col_ok.button("OK", key=f"ok_{current_idx}"):
+                    st.session_state.show_correct_modal = False
+                if col_next.button("Next", key=f"next_{current_idx}"):
+                    # Advance to next image or end game
+                    if current_idx + 1 < total_images:
+                        st.session_state.current_index += 1
+                    else:
+                        st.session_state.game_over = True
+                    st.session_state.show_correct_modal = False
+                    safe_rerun()
+        except Exception:
+            # Fallback if st.modal not available: show inline message
+            st.success(f"🎉 Correct! That is **{correct_answer}**.")
+            if st.button("Next", key=f"next_fallback_{current_idx}"):
+                if current_idx + 1 < total_images:
+                    st.session_state.current_index += 1
+                else:
+                    st.session_state.game_over = True
+                st.session_state.show_correct_modal = False
+                safe_rerun()
+
+    if st.session_state.show_wrong_modal:
+        try:
+            with st.modal("Incorrect", clear_on_close=True):
+                st.error(f"❌ '{st.session_state.last_guess}' is not correct.")
+                st.write("What would you like to do?")
+                col_try, col_give = st.columns([1,1])
+                if col_try.button("Try Again", key=f"try_{current_idx}"):
+                    st.session_state.show_wrong_modal = False
+                if col_give.button("Give Up", key=f"give_{current_idx}"):
+                    # Reveal answer, mark incorrect, and wait for Next
+                    st.session_state.seen_list.append({"name": correct_answer, "status": "incorrect"})
+                    st.session_state.feedback = ("skip", f"⏭️ Given up. The correct name is **{correct_answer}**.")
+                    st.session_state.awaiting_next = True
+                    st.session_state.show_wrong_modal = False
+                    # Refresh UI so Next button (awaiting_next) appears
+                    safe_rerun()
+        except Exception:
+            # Fallback inline if modal not available
+            st.error(f"❌ '{st.session_state.last_guess}' is not correct.")
+            st.write("What would you like to do?")
+            col_try, col_give = st.columns([1,1])
+            if col_try.button("Try Again", key=f"try_fb_{current_idx}"):
+                st.session_state.show_wrong_modal = False
+            if col_give.button("Give Up", key=f"give_fb_{current_idx}"):
+                st.session_state.seen_list.append({"name": correct_answer, "status": "incorrect"})
+                st.session_state.feedback = ("skip", f"⏭️ Given up. The correct name is **{correct_answer}**.")
+                st.session_state.awaiting_next = True
+                st.session_state.show_wrong_modal = False
+                safe_rerun()
 
     # Display feedback message persistent until next submission
     if st.session_state.feedback:
