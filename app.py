@@ -169,7 +169,7 @@ if page == "Guess That Pittsvillian":
         with col4: year_2014 = st.checkbox("Class of 2014")
         
         st.subheader("2. Name Format")
-        name_mode = st.radio("How should the names be displayed/guessed?", ["Full Name", "First Names Only"])
+        name_mode = st.radio("How should the names be displayed/guessed?", ["First Names Only", "Full Name"])
         
         # Add a bit of space before the start button
         st.write("")
