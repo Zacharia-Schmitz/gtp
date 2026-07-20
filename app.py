@@ -5,16 +5,6 @@ import random
 import time
 
 # --- HELPER FUNCTIONS ---
-def safe_rerun():
-    """Helper to safely rerun across Streamlit versions."""
-    try:
-        st.experimental_rerun()
-        return
-    except Exception:
-        # experimental_rerun not available or failed; fallback to stopping execution
-        st.session_state["_needs_rerun"] = True
-        st.stop()
-
 def format_name_blanks(name, mode):
     """Converts a name into spaced underscores based on user selection."""
     if mode == "First Names Only":
@@ -28,12 +18,11 @@ def format_name_blanks(name, mode):
 def load_game_data(selected_years):
     """Reads the selected directories and creates a list of dicts mapping paths to cleaned names."""
     game_data = []
-    tried_paths = []
     valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
-
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
     for year in selected_years:
+        # Build a list of candidate directories to try so deploys find the images
         candidates = [
             year,
             os.path.join(base_dir, year),
@@ -45,7 +34,6 @@ def load_game_data(selected_years):
         directory_found = None
         for cand in candidates:
             cand_abs = os.path.abspath(cand)
-            tried_paths.append(cand_abs)
             if os.path.exists(cand_abs) and os.path.isdir(cand_abs):
                 directory_found = cand_abs
                 break
@@ -63,8 +51,6 @@ def load_game_data(selected_years):
                         "year": year
                     })
 
-    # Attach tried paths for helpful debugging
-    load_game_data._last_tried = tried_paths
     return game_data
 
 def initialize_game():
@@ -80,13 +66,52 @@ def initialize_game():
     st.session_state.current_index = 0
     st.session_state.score = 0
     st.session_state.game_over = False
-    st.session_state.feedback = None
     st.session_state.seen_list = []
-    st.session_state.awaiting_next = False
-    st.session_state.show_correct_modal = False
-    st.session_state.show_wrong_modal = False
+    st.session_state.modal_state = None  # Controls which popup is open
+    st.session_state.gave_up = False
     st.session_state.last_guess = ""
     st.session_state.game_active = True
+
+# --- DIALOGS (POP-UPS) ---
+@st.dialog("🎉 Correct!")
+def show_correct_dialog(correct_name, correct_year):
+    st.write(f"Spot on! That is **{correct_name}** (Class of {correct_year}).")
+    if st.button("Next Picture", use_container_width=True, type="primary"):
+        st.session_state.score += 1
+        st.session_state.seen_list.append({"name": correct_name, "status": "correct"})
+        st.session_state.current_index += 1
+        st.session_state.modal_state = None
+        st.rerun()
+
+@st.dialog("❌ Incorrect")
+def show_incorrect_dialog(last_guess, correct_name, correct_year):
+    if not st.session_state.gave_up:
+        st.write(f"Your guess **'{last_guess}'** wasn't quite right.")
+        col1, col2 = st.columns(2)
+        if col1.button("Try Again", use_container_width=True):
+            st.session_state.modal_state = None
+            st.rerun()
+        if col2.button("Give Up", use_container_width=True, type="primary"):
+            st.session_state.gave_up = True
+            st.rerun()
+    else:
+        st.markdown(f"The correct answer was:<br><h3 style='text-align: center;'>{correct_name}</h3><h4 style='text-align: center;'>Class of {correct_year}</h4>", unsafe_allow_html=True)
+        st.write("---")
+        
+        if st.button("Next Picture", use_container_width=True):
+            st.session_state.seen_list.append({"name": correct_name, "status": "incorrect"})
+            st.session_state.current_index += 1
+            st.session_state.modal_state = None
+            st.session_state.gave_up = False
+            st.rerun()
+            
+        if st.button("Give Me Credit - Only My Spelling Was Off", use_container_width=True, type="primary"):
+            st.session_state.score += 1
+            st.session_state.seen_list.append({"name": correct_name, "status": "correct"})
+            st.session_state.current_index += 1
+            st.session_state.modal_state = None
+            st.session_state.gave_up = False
+            st.rerun()
 
 # --- APP INITIALIZATION ---
 st.set_page_config(page_title="Guess that Pittsvillian", page_icon="👥", layout="centered")
@@ -98,7 +123,7 @@ if "game_active" not in st.session_state or not st.session_state.game_active:
     st.subheader("1. Select Years to Play")
     col1, col2, col3, col4 = st.columns(4)
     with col1: year_2011 = st.checkbox("Class of 2011", value=True)
-    with col2: year_2012 = st.checkbox("Class of 2012")
+    with col2: year_2012 = st.checkbox("Class of 2012", value=True)
     with col3: year_2013 = st.checkbox("Class of 2013")
     with col4: year_2014 = st.checkbox("Class of 2014")
     
@@ -122,7 +147,7 @@ if "game_active" not in st.session_state or not st.session_state.game_active:
             st.session_state.name_mode = name_mode
             st.session_state.guess_class = guess_class
             initialize_game()
-            safe_rerun()
+            st.rerun()
 
 # --- GAME LOGIC CODE ---
 if st.session_state.get("game_active"):
@@ -155,11 +180,14 @@ if st.session_state.get("game_active"):
     current_idx = st.session_state.current_index
     total_images = len(st.session_state.all_items)
 
+    # Check for game over condition
+    if current_idx >= total_images and total_images > 0:
+        st.session_state.game_over = True
+
     if not st.session_state.game_over:
         # Get current item
         current_item = st.session_state.all_items[current_idx]
         
-        # Adjust correct answer based on game mode
         correct_name_full = current_item["correct_name"]
         correct_name_eval = correct_name_full.split()[0] if st.session_state.name_mode == "First Names Only" else correct_name_full
         correct_year = current_item["year"]
@@ -181,150 +209,38 @@ if st.session_state.get("game_active"):
         blanks = format_name_blanks(correct_name_full, st.session_state.name_mode)
         st.markdown(f"<h2 style='text-align: center; letter-spacing: 2px;'>{blanks}</h2>", unsafe_allow_html=True)
         
-        # Guess Form / Skip behavior
-        if not st.session_state.awaiting_next:
-            with st.form(key="guess_form", clear_on_submit=True):
-                user_guess = st.text_input("Who is this?", placeholder="Type name here...").strip()
+        # Guess Form
+        with st.form(key="guess_form", clear_on_submit=True):
+            user_guess = st.text_input("Who is this?", placeholder="Type name here...").strip()
+            
+            # Dynamic radio buttons for class year guessing
+            class_guess = None
+            if st.session_state.guess_class == "Yes":
+                class_guess = st.radio("Guess their class:", st.session_state.selected_years, horizontal=True)
+
+            submit_button = st.form_submit_button(label="Submit Guess", use_container_width=True)
+
+        if submit_button:
+            if user_guess:
+                # Case-insensitive comparison
+                name_correct = user_guess.lower() == correct_name_eval.lower()
+                class_correct = (class_guess == correct_year) if st.session_state.guess_class == "Yes" else True
                 
-                # Dynamic radio buttons for class year guessing
-                class_guess = None
-                if st.session_state.guess_class == "Yes":
-                    class_guess = st.radio("Guess their class:", st.session_state.selected_years, horizontal=True)
-
-                col_submit, col_skip = st.columns([1,1])
-                with col_submit:
-                    submit_button = st.form_submit_button(label="Submit Guess")
-                with col_skip:
-                    skip_button = st.form_submit_button(label="Skip")
-
-            if skip_button:
-                # Reveal answer, mark as incorrect in seen list, wait for explicit Next
-                st.session_state.seen_list.append({"name": correct_name_full, "status": "incorrect"})
-                
-                skip_msg = f"⏭️ Skipped. The correct name is **{correct_name_full}**"
-                if st.session_state.guess_class == "Yes":
-                    skip_msg += f" (Class of {correct_year})."
+                if name_correct and class_correct:
+                    st.session_state.modal_state = "correct"
                 else:
-                    skip_msg += "."
-                    
-                st.session_state.feedback = ("skip", skip_msg)
-                st.session_state.awaiting_next = True
-                safe_rerun()
-
-            if submit_button:
-                if user_guess:
-                    # Case-insensitive comparison
-                    name_correct = user_guess.lower() == correct_name_eval.lower()
-                    class_correct = (class_guess == correct_year) if st.session_state.guess_class == "Yes" else True
-                    
-                    if name_correct and class_correct:
-                        # Record correct answer but do NOT advance yet; show modal
-                        st.session_state.score += 1
-                        st.session_state.seen_list.append({"name": correct_name_full, "status": "correct"})
-                        st.session_state.show_correct_modal = True
-                        st.session_state.feedback = None
-                        safe_rerun()
-                    else:
-                        # Wrong answer
-                        st.session_state.last_guess = user_guess
-                        st.session_state.show_wrong_modal = True
-                        st.session_state.feedback = None
-                        safe_rerun()
-                else:
-                    st.warning("Please type a name before submitting!")
-        else:
-            # User skipped and must click Next to continue
-            if st.session_state.feedback:
-                fb_type, fb_msg = st.session_state.feedback
-                if fb_type == "skip":
-                    st.info(fb_msg)
-            if st.button("Next Image"):
-                if current_idx + 1 < total_images:
-                    st.session_state.current_index += 1
-                    st.session_state.feedback = None
-                    st.session_state.awaiting_next = False
-                else:
-                    st.session_state.game_over = True
-                safe_rerun()
-
-        # --- Modals for correct / wrong answers ---
-        if st.session_state.show_correct_modal:
-            try:
-                with st.modal("Correct!", clear_on_close=True):
-                    success_msg = f"🎉 Correct! That is **{correct_name_full}**"
-                    if st.session_state.guess_class == "Yes":
-                        success_msg += f" (Class of {correct_year})."
-                    else:
-                        success_msg += "."
-                        
-                    st.success(success_msg)
-                    col_ok, col_next = st.columns([1,1])
-                    if col_ok.button("OK", key=f"ok_{current_idx}"):
-                        st.session_state.show_correct_modal = False
-                        safe_rerun()
-                    if col_next.button("Next", key=f"next_{current_idx}"):
-                        if current_idx + 1 < total_images:
-                            st.session_state.current_index += 1
-                        else:
-                            st.session_state.game_over = True
-                        st.session_state.show_correct_modal = False
-                        safe_rerun()
-            except Exception:
-                # Fallback if st.modal not available
-                st.success(f"🎉 Correct! That is **{correct_name_full}**.")
-                if st.button("Next Image", key=f"next_fallback_{current_idx}"):
-                    if current_idx + 1 < total_images:
-                        st.session_state.current_index += 1
-                    else:
-                        st.session_state.game_over = True
-                    st.session_state.show_correct_modal = False
-                    safe_rerun()
-
-        if st.session_state.show_wrong_modal:
-            try:
-                with st.modal("Incorrect", clear_on_close=True):
-                    st.error(f"❌ '{st.session_state.last_guess}' (or the selected year) is not entirely correct.")
-                    st.write("What would you like to do?")
-                    col_try, col_give = st.columns([1,1])
-                    if col_try.button("Try Again", key=f"try_{current_idx}"):
-                        st.session_state.show_wrong_modal = False
-                        safe_rerun()
-                    if col_give.button("Give Up", key=f"give_{current_idx}"):
-                        st.session_state.seen_list.append({"name": correct_name_full, "status": "incorrect"})
-                        
-                        give_up_msg = f"⏭️ Given up. The correct name is **{correct_name_full}**"
-                        if st.session_state.guess_class == "Yes":
-                            give_up_msg += f" (Class of {correct_year})."
-                        else:
-                            give_up_msg += "."
-                            
-                        st.session_state.feedback = ("skip", give_up_msg)
-                        st.session_state.awaiting_next = True
-                        st.session_state.show_wrong_modal = False
-                        safe_rerun()
-            except Exception:
-                # Fallback inline if modal not available
-                st.error(f"❌ '{st.session_state.last_guess}' is not correct.")
-                col_try, col_give = st.columns([1,1])
-                if col_try.button("Try Again", key=f"try_fb_{current_idx}"):
-                    st.session_state.show_wrong_modal = False
-                    safe_rerun()
-                if col_give.button("Give Up", key=f"give_fb_{current_idx}"):
-                    st.session_state.seen_list.append({"name": correct_name_full, "status": "incorrect"})
-                    st.session_state.feedback = ("skip", f"⏭️ Given up. The correct name is **{correct_name_full}**.")
-                    st.session_state.awaiting_next = True
-                    st.session_state.show_wrong_modal = False
-                    safe_rerun()
-
-        # Display feedback message persistent until next submission
-        if st.session_state.feedback and not st.session_state.awaiting_next:
-            fb_type, fb_msg = st.session_state.feedback
-            if fb_type == "success":
-                st.success(fb_msg)
-            elif fb_type == "skip":
-                st.info(fb_msg)
+                    st.session_state.last_guess = user_guess
+                    st.session_state.modal_state = "incorrect"
+                    st.session_state.gave_up = False
+                st.rerun()
             else:
-                st.error(fb_msg)
+                st.warning("Please type a name before submitting!")
+
+        # Trigger Dialogs outside of the form based on state
+        if st.session_state.modal_state == "correct":
+            show_correct_dialog(correct_name_full, correct_year)
+        elif st.session_state.modal_state == "incorrect":
+            show_incorrect_dialog(st.session_state.last_guess, correct_name_full, correct_year)
 
         # --- Seen Names List ---
         st.markdown("---")
@@ -361,10 +277,10 @@ if st.session_state.get("game_active"):
             st.markdown("🥉 **Not bad! Practice makes perfect.**")
             
         # Reset Button returns to settings
-        if st.button("🔄 Play Again / Change Settings"):
+        if st.button("🔄 Play Again / Change Settings", type="primary"):
             st.session_state.game_active = False
             # Clear cache so we can select new folders
             for key in list(st.session_state.keys()):
                 if key != "game_active":
                     del st.session_state[key]
-            safe_rerun()
+            st.rerun()
