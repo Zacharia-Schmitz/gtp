@@ -70,8 +70,8 @@ def load_game_data(directory):
     return game_data
 
 # --- APP INITIALIZATION ---
-st.set_page_config(page_title="Friend Guessing Game", page_icon="👥", layout="centered")
-st.title("👥 Guess the Friend!")
+st.set_page_config(page_title="Guess that Pittsvillian", page_icon="👥", layout="centered")
+st.title("👥 Guess the Pittsvillian")
 st.write("Look at the picture and type the correct name.")
 
 # Initialize Session State variables if they don't exist
