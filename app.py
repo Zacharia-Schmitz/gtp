@@ -319,6 +319,32 @@ with tab_play:
             elif st.session_state.modal_state == "incorrect":
                 show_incorrect_dialog(st.session_state.last_guess, correct_name_full, correct_year, image_path)
 
+            # --- Restart Game Button ---
+            st.markdown("---")
+            # Inject Javascript to dynamically style the "Restart Game" button text red
+            components.html(
+                """
+                <script>
+                const elements = window.parent.document.querySelectorAll('button p');
+                elements.forEach(p => {
+                    if (p.innerText.includes('Restart Game')) {
+                        p.style.color = '#ff4b4b'; // Streamlit's default red color
+                        p.parentElement.style.borderColor = '#ff4b4b'; // Matches border
+                    }
+                });
+                </script>
+                """,
+                height=0, width=0
+            )
+            
+            if st.button("🔄 Restart Game (Change Settings)", use_container_width=True):
+                st.session_state.game_active = False
+                # Clear cache so we can return cleanly to setup menu
+                for key in list(st.session_state.keys()):
+                    if key != "game_active":
+                        del st.session_state[key]
+                st.rerun()
+
             # --- Seen Names List ---
             st.markdown("---")
             st.write("**Seen Names:**")
@@ -332,16 +358,6 @@ with tab_play:
                         st.markdown(f"<span style='color:red'>✗ {name}</span>", unsafe_allow_html=True)
             else:
                 st.write("(No names seen yet)")
-                
-            # Restart game button inside active game
-            st.markdown("---")
-            if st.button("🔄 Restart Game (Change Settings)", use_container_width=True):
-                st.session_state.game_active = False
-                # Clear cache so we can return cleanly to setup menu
-                for key in list(st.session_state.keys()):
-                    if key != "game_active":
-                        del st.session_state[key]
-                st.rerun()
 
         else:
             # --- GAME OVER SCREEN ---
@@ -458,8 +474,14 @@ with tab_browse:
     
     all_possible_years = ["2011", "2012", "2013", "2014"]
     
-    # Filter by class year
-    selected_browse_year = st.selectbox("Select Class to Browse:", ["All Classes"] + all_possible_years)
+    # Filter columns setup
+    filter_col1, filter_col2 = st.columns(2)
+    with filter_col1:
+        # Filter by class year
+        selected_browse_year = st.selectbox("Select Class to Browse:", ["All Classes"] + all_possible_years)
+    with filter_col2:
+        # Wildcard search
+        search_query = st.text_input("Search by Name:", placeholder="e.g., Smith, Sarah...")
     
     years_to_load = all_possible_years if selected_browse_year == "All Classes" else [selected_browse_year]
     
@@ -469,28 +491,38 @@ with tab_browse:
     if not browse_data:
         st.info(f"No images found for {selected_browse_year}. Please ensure your image folders are set up correctly.")
     else:
-        # Sort alphabetically by first name
-        browse_data = sorted(browse_data, key=lambda x: x["correct_name"])
-        
-        st.write(f"Showing **{len(browse_data)}** Pittsvillians.")
-        st.markdown("---")
-        
-        # Display images in a grid
-        cols = st.columns(4)
-        for idx, item in enumerate(browse_data):
-            with cols[idx % 4]:
-                # Standardize the image to a 3:4 aspect ratio to fix grid alignment
-                standard_img = get_standardized_image(item["image_path"])
-                
-                st.image(standard_img, use_container_width=True)
-                
-                # HTML markdown to display name and class beautifully centered underneath
-                st.markdown(
-                    f"""
-                    <div style='text-align: center; margin-top: -10px; margin-bottom: 25px;'>
-                        <strong>{item['correct_name']}</strong><br>
-                        <span style='font-size: 0.8em; color: gray;'>Class of {item['year']}</span>
-                    </div>
-                    """, 
-                    unsafe_allow_html=True
-                )
+        # Apply the wildcard search filter
+        if search_query:
+            browse_data = [
+                item for item in browse_data 
+                if search_query.lower() in item["correct_name"].lower()
+            ]
+
+        if not browse_data:
+            st.warning("No Pittsvillians found matching your search criteria.")
+        else:
+            # Sort alphabetically by first name
+            browse_data = sorted(browse_data, key=lambda x: x["correct_name"])
+            
+            st.write(f"Showing **{len(browse_data)}** Pittsvillians.")
+            st.markdown("---")
+            
+            # Display images in a grid
+            cols = st.columns(4)
+            for idx, item in enumerate(browse_data):
+                with cols[idx % 4]:
+                    # Standardize the image to a 3:4 aspect ratio to fix grid alignment
+                    standard_img = get_standardized_image(item["image_path"])
+                    
+                    st.image(standard_img, use_container_width=True)
+                    
+                    # HTML markdown to display name and class beautifully centered underneath
+                    st.markdown(
+                        f"""
+                        <div style='text-align: center; margin-top: -10px; margin-bottom: 25px;'>
+                            <strong>{item['correct_name']}</strong><br>
+                            <span style='font-size: 0.8em; color: gray;'>Class of {item['year']}</span>
+                        </div>
+                        """, 
+                        unsafe_allow_html=True
+                    )
