@@ -119,6 +119,7 @@ def initialize_game():
     st.session_state.seen_list = []
     st.session_state.modal_state = None  # Controls which popup is open
     st.session_state.gave_up = False
+    st.session_state.no_idea = False   # Tracks if they clicked "I Have No Idea"
     st.session_state.last_guess = ""
     st.session_state.game_active = True
     
@@ -134,6 +135,7 @@ def show_correct_dialog(correct_name, correct_year, image_path):
         st.session_state.seen_list.append({"name": correct_name, "status": "correct", "image_path": image_path, "year": correct_year})
         st.session_state.current_index += 1
         st.session_state.modal_state = None
+        st.session_state.no_idea = False
         st.rerun()
 
 @st.dialog("❌ Incorrect")
@@ -156,22 +158,26 @@ def show_incorrect_dialog(last_guess, correct_name, correct_year, image_path):
             st.session_state.current_index += 1
             st.session_state.modal_state = None
             st.session_state.gave_up = False
+            st.session_state.no_idea = False
             st.rerun()
             
-        if st.button("Give Me Credit - Only My Spelling Was Off", use_container_width=True, type="primary"):
-            st.session_state.score += 1
-            # Add as "credited" so we can show the misspelled version at the end
-            st.session_state.seen_list.append({
-                "name": correct_name, 
-                "status": "credited", 
-                "guess": last_guess, 
-                "image_path": image_path,
-                "year": correct_year
-            })
-            st.session_state.current_index += 1
-            st.session_state.modal_state = None
-            st.session_state.gave_up = False
-            st.rerun()
+        # Only show the Give Me Credit button if they DID NOT click "I Have No Idea"
+        if not st.session_state.get("no_idea", False):
+            if st.button("Give Me Credit - Only My Spelling Was Off", use_container_width=True, type="primary"):
+                st.session_state.score += 1
+                # Add as "credited" so we can show the misspelled version at the end
+                st.session_state.seen_list.append({
+                    "name": correct_name, 
+                    "status": "credited", 
+                    "guess": last_guess, 
+                    "image_path": image_path,
+                    "year": correct_year
+                })
+                st.session_state.current_index += 1
+                st.session_state.modal_state = None
+                st.session_state.gave_up = False
+                st.session_state.no_idea = False
+                st.rerun()
 
 
 # ==========================================
@@ -273,8 +279,15 @@ if page == "Guess That Pittsvillian":
             # Guess Form
             with st.form(key="guess_form", clear_on_submit=True):
                 user_guess = st.text_input("Who is this?", placeholder="Type name here...").strip()
-                submit_button = st.form_submit_button(label="Submit Guess", use_container_width=True)
+                
+                # Setup buttons side by side
+                btn_col1, btn_col2 = st.columns(2)
+                with btn_col1:
+                    submit_button = st.form_submit_button(label="Submit Guess", use_container_width=True)
+                with btn_col2:
+                    no_idea_button = st.form_submit_button(label="I Have No Idea", use_container_width=True)
 
+            # Handle Submit Guess Button
             if submit_button:
                 if user_guess:
                     # Case-insensitive comparison
@@ -286,9 +299,18 @@ if page == "Guess That Pittsvillian":
                         st.session_state.last_guess = user_guess
                         st.session_state.modal_state = "incorrect"
                         st.session_state.gave_up = False
+                        st.session_state.no_idea = False
                     st.rerun()
                 else:
                     st.warning("Please type a name before submitting!")
+                    
+            # Handle I Have No Idea Button
+            if no_idea_button:
+                st.session_state.last_guess = ""
+                st.session_state.modal_state = "incorrect"
+                st.session_state.gave_up = True   # Bypass the "Try Again" step
+                st.session_state.no_idea = True   # Hide the "Credit" button
+                st.rerun()
 
             # Trigger Dialogs outside of the form based on state
             if st.session_state.modal_state == "correct":
@@ -400,6 +422,7 @@ if page == "Guess That Pittsvillian":
                     st.session_state.seen_list = []
                     st.session_state.modal_state = None
                     st.session_state.gave_up = False
+                    st.session_state.no_idea = False
                     st.session_state.last_guess = ""
                     st.session_state.start_time = time.time()
                     st.rerun()
