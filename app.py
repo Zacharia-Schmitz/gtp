@@ -71,20 +71,23 @@ def initialize_game():
     st.session_state.gave_up = False
     st.session_state.last_guess = ""
     st.session_state.game_active = True
+    
+    # Track the start time in Python for the final Game Over screen
+    st.session_state.start_time = time.time()
 
 # --- DIALOGS (POP-UPS) ---
 @st.dialog("🎉 Correct!")
-def show_correct_dialog(correct_name, correct_year):
+def show_correct_dialog(correct_name, correct_year, image_path):
     st.write(f"Spot on! That is **{correct_name}** (Class of {correct_year}).")
     if st.button("Next Picture", use_container_width=True, type="primary"):
         st.session_state.score += 1
-        st.session_state.seen_list.append({"name": correct_name, "status": "correct"})
+        st.session_state.seen_list.append({"name": correct_name, "status": "correct", "image_path": image_path})
         st.session_state.current_index += 1
         st.session_state.modal_state = None
         st.rerun()
 
 @st.dialog("❌ Incorrect")
-def show_incorrect_dialog(last_guess, correct_name, correct_year):
+def show_incorrect_dialog(last_guess, correct_name, correct_year, image_path):
     if not st.session_state.gave_up:
         st.write(f"Your guess **'{last_guess}'** wasn't quite right.")
         col1, col2 = st.columns(2)
@@ -99,7 +102,7 @@ def show_incorrect_dialog(last_guess, correct_name, correct_year):
         st.write("---")
         
         if st.button("Next Picture", use_container_width=True):
-            st.session_state.seen_list.append({"name": correct_name, "status": "incorrect"})
+            st.session_state.seen_list.append({"name": correct_name, "status": "incorrect", "image_path": image_path})
             st.session_state.current_index += 1
             st.session_state.modal_state = None
             st.session_state.gave_up = False
@@ -107,7 +110,13 @@ def show_incorrect_dialog(last_guess, correct_name, correct_year):
             
         if st.button("Give Me Credit - Only My Spelling Was Off", use_container_width=True, type="primary"):
             st.session_state.score += 1
-            st.session_state.seen_list.append({"name": correct_name, "status": "correct"})
+            # Add as "credited" so we can show the misspelled version at the end
+            st.session_state.seen_list.append({
+                "name": correct_name, 
+                "status": "credited", 
+                "guess": last_guess, 
+                "image_path": image_path
+            })
             st.session_state.current_index += 1
             st.session_state.modal_state = None
             st.session_state.gave_up = False
@@ -191,6 +200,7 @@ if st.session_state.get("game_active"):
         correct_name_full = current_item["correct_name"]
         correct_name_eval = correct_name_full.split()[0] if st.session_state.name_mode == "First Names Only" else correct_name_full
         correct_year = current_item["year"]
+        image_path = current_item["image_path"]
         
         # Display Score & Progress
         col1, col2 = st.columns(2)
@@ -203,7 +213,7 @@ if st.session_state.get("game_active"):
         st.markdown("---")
         
         # Display Friend's Image
-        st.image(current_item["image_path"], use_container_width=True)
+        st.image(image_path, use_container_width=True)
         
         # Display the formatted blanks
         blanks = format_name_blanks(correct_name_full, st.session_state.name_mode)
@@ -238,9 +248,9 @@ if st.session_state.get("game_active"):
 
         # Trigger Dialogs outside of the form based on state
         if st.session_state.modal_state == "correct":
-            show_correct_dialog(correct_name_full, correct_year)
+            show_correct_dialog(correct_name_full, correct_year, image_path)
         elif st.session_state.modal_state == "incorrect":
-            show_incorrect_dialog(st.session_state.last_guess, correct_name_full, correct_year)
+            show_incorrect_dialog(st.session_state.last_guess, correct_name_full, correct_year, image_path)
 
         # --- Seen Names List ---
         st.markdown("---")
@@ -249,7 +259,7 @@ if st.session_state.get("game_active"):
             for item in st.session_state.seen_list:
                 name = item.get("name")
                 status = item.get("status")
-                if status == "correct":
+                if status == "correct" or status == "credited":
                     st.markdown(f"<span style='color:green'>✓ {name}</span>", unsafe_allow_html=True)
                 else:
                     st.markdown(f"<span style='color:red'>✗ {name}</span>", unsafe_allow_html=True)
@@ -264,10 +274,16 @@ if st.session_state.get("game_active"):
         # Stop JS timer
         components.html("""<script>sessionStorage.removeItem("pittsvillian_startTime");</script>""", height=0)
         
+        # Calculate Final Time
+        total_time_seconds = int(time.time() - st.session_state.start_time)
+        mins, secs = divmod(total_time_seconds, 60)
+        time_formatted = f"{mins:02d}:{secs:02d}"
+
         final_score = st.session_state.score
         percentage = int((final_score / total_images) * 100) if total_images > 0 else 0
         
         st.markdown(f"### Final Result: **{final_score} / {total_images}** ({percentage}%)")
+        st.markdown(f"### ⏱️ Total Time: **{time_formatted}**")
         
         if percentage == 100:
             st.markdown("🥇 **Flawless Victory! You know everyone perfectly.**")
@@ -276,8 +292,38 @@ if st.session_state.get("game_active"):
         else:
             st.markdown("🥉 **Not bad! Practice makes perfect.**")
             
+        st.markdown("---")
+        
+        # --- End Game Stats ---
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("### ⚙️ Game Settings")
+            st.write(f"- **Classes Included:** {', '.join(st.session_state.selected_years)}")
+            st.write(f"- **Name Mode:** {st.session_state.name_mode}")
+            st.write(f"- **Class Guessing:** {st.session_state.guess_class}")
+
+        with col2:
+            credited_items = [item for item in st.session_state.seen_list if item.get("status") == "credited"]
+            if credited_items:
+                st.markdown("### 📝 Spelled Incorrectly (Given Credit)")
+                for item in credited_items:
+                    st.write(f"- Guessed **'{item['guess']}'** for **{item['name']}**")
+            else:
+                st.write("") # Spacer
+
+        # --- Display Incorrect Faces ---
+        incorrect_items = [item for item in st.session_state.seen_list if item.get("status") == "incorrect"]
+        if incorrect_items:
+            st.markdown("---")
+            st.markdown("### ❌ People You Missed")
+            cols = st.columns(4) # Adjust number of columns based on preference
+            for idx, item in enumerate(incorrect_items):
+                with cols[idx % 4]:
+                    st.image(item["image_path"], caption=item["name"], use_container_width=True)
+
+        st.markdown("---")
         # Reset Button returns to settings
-        if st.button("🔄 Play Again / Change Settings", type="primary"):
+        if st.button("🔄 Play Again / Change Settings", type="primary", use_container_width=True):
             st.session_state.game_active = False
             # Clear cache so we can select new folders
             for key in list(st.session_state.keys()):
