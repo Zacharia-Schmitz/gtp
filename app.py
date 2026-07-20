@@ -18,15 +18,18 @@ st.set_page_config(
 # Forces Streamlit columns to remain as a 2-column grid on mobile instead of stacking to 1 column
 st.markdown("""
     <style>
-    @media (max-width: 600px) {
-        [data-testid="stHorizontalBlock"] {
+    @media (max-width: 768px) {
+        /* Force the container to stay as a row and wrap its children */
+        div[data-testid="stHorizontalBlock"] {
+            flex-direction: row !important;
             flex-wrap: wrap !important;
         }
-        [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+        /* Force each individual column to take up half the screen width, minus the gap */
+        div[data-testid="column"] {
             width: calc(50% - 1rem) !important;
             flex: 1 1 calc(50% - 1rem) !important;
             min-width: calc(50% - 1rem) !important;
-            margin-bottom: 1rem;
+            padding-bottom: 1rem !important;
         }
     }
     </style>
